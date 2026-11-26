@@ -3,101 +3,132 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Quét thẻ – thử nghiệm</title>
+<title>Quét thẻ</title>
 <style>
   :root{--bg:#14181c;--ink:#f2f4f5;--mut:#9aa5ad;--ok:#3ddc97;--line:#2a3138}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,"Segoe UI",sans-serif}
-  .cam{position:relative;width:100%;max-width:900px;margin:0 auto;background:#000;min-height:200px}
+  #top{display:flex;justify-content:space-between;gap:8px;padding:10px 14px;font-weight:700}
+  #st{font-weight:400;color:var(--mut);text-align:right}
+  .cam{position:relative;width:100%;max-width:900px;margin:0 auto;background:#000;min-height:160px}
   video,canvas{display:block;width:100%}
   canvas{position:absolute;inset:0;height:100%}
-  .panel{max-width:900px;margin:0 auto;padding:12px 14px}
+  .panel{max-width:900px;margin:0 auto;padding:10px 14px}
   button{font:inherit;font-weight:600;padding:12px 20px;border:0;border-radius:10px;background:var(--ok);color:#06210f}
-  #msg{color:var(--mut);margin:8px 0}
-  .tot{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
-  .tot div{border:1px solid var(--line);border-radius:10px;padding:8px;text-align:center}
-  .tot b{display:block;font-size:28px}
-  #list{color:var(--mut);word-spacing:6px}
-  #list span{color:var(--ink);white-space:nowrap}
+  .tot{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:8px 0}
+  .tot div{border:1px solid var(--line);border-radius:10px;padding:6px;text-align:center}
+  .tot b{display:block;font-size:26px}
+  #msg,#miss{color:var(--mut);font-size:14px;margin:6px 0}
 </style>
 </head>
 <body>
+<div id="top"><span id="num">Câu –</span><span id="st">Chưa kết nối</span></div>
 <div class="cam"><video id="v" playsinline muted></video><canvas id="c"></canvas></div>
 <div class="panel">
   <button id="go">Mở camera</button>
-  <p id="msg">Bấm “Mở camera”, rồi giơ thẻ vào khung hình.</p>
-  <div class="tot">
-    <div>A<b id="tA">0</b></div><div>B<b id="tB">0</b></div>
-    <div>C<b id="tC">0</b></div><div>D<b id="tD">0</b></div>
-  </div>
-  <div id="list"></div>
-  <p id="info" style="color:var(--mut);font-size:14px"></p>
+  <div class="tot"><div>A<b id="tA">0</b></div><div>B<b id="tB">0</b></div><div>C<b id="tC">0</b></div><div>D<b id="tD">0</b></div></div>
+  <div id="msg"></div>
+  <div id="miss"></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/cv.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/aruco.js"></script>
 <script>
-const $=id=>document.getElementById(id);
-const LET=['A','B','C','D'];
-const vid=$('v'), cv=$('c'), ctx=cv.getContext('2d');
-const work=document.createElement('canvas');
-const wctx=work.getContext('2d',{willReadFrequently:true});
-let det, last=0, fpsT=0, fpsN=0;
+const $=id=>document.getElementById(id), LET=['A','B','C','D'];
+const hp=new URLSearchParams(location.hash.slice(1));
+if(hp.get('api')){localStorage.setItem('pl_api',hp.get('api'));history.replaceState(null,'',location.pathname)}
+const API=localStorage.getItem('pl_api')||'';
+const say=t=>$('msg').textContent=t;
+const vid=$('v'),cv=$('c'),ctx=cv.getContext('2d');
+const work=document.createElement('canvas'),wctx=work.getContext('2d',{willReadFrequently:true});
 
-function say(t){$('msg').textContent=t}
+let F=null,state={cau:0,mo:1},ids=new Set(),det,last=0;
+let buf=new Map(),sent=new Map(),pend=new Map(),cau=0;
+
+const get=async a=>(await fetch(API+'?action='+a,{cache:'no-store'})).json();
+
+async function loadFull(){
+  F=await get('full');state=F.state;ids=new Set(F.students.map(s=>s.id));
+}
+async function poll(){
+  try{
+    const n=await get('live'),s=n.state;
+    if(!F||s.lop!==state.lop||String(s.phien)!==String(state.phien))await loadFull();
+    state=s;
+    if(Number(s.cau)!==cau){cau=Number(s.cau);buf.clear();sent.clear();pend.clear()}
+    head();
+  }catch(e){$('st').textContent='Mất kết nối…'}
+}
+function head(){
+  const open=Number(state.mo)===1;
+  $('num').textContent='Câu '+state.cau+(F?'/'+F.questions.length:'');
+  $('st').textContent=(open?'● Đang nhận bài':'■ Đã khóa, không ghi nhận')+' · đã quét '+sent.size+(F?'/'+F.students.length:'');
+  if(F){
+    const miss=F.students.filter(s=>!sent.has(s.id)&&!pend.has(s.id)).map(s=>s.name);
+    $('miss').textContent=miss.length?'Chưa quét: '+miss.join(', '):'Đã quét đủ cả lớp.';
+  }
+  const t={A:0,B:0,C:0,D:0};[...sent,...[...pend].filter(([k])=>!sent.has(k))].forEach(([,a])=>t[a]++);
+  for(const k in t)$('t'+k).textContent=t[k];
+}
 
 // Đáp án = cạnh của thẻ đang hướng lên trên (A trên, B phải, C dưới, D trái khi thẻ đặt thẳng)
 function answerOf(c){
-  const ang=Math.atan2(c[1].y-c[0].y, c[1].x-c[0].x)*180/Math.PI; // độ, trục y hướng xuống
-  const a=(ang+360)%360;
-  return {i:Math.round(((360-a)%360)/90)%4, ang:Math.round(ang)};
+  const a=(Math.atan2(c[1].y-c[0].y,c[1].x-c[0].x)*180/Math.PI+360)%360;
+  return LET[Math.round(((360-a)%360)/90)%4];
+}
+// Một thẻ chỉ được ghi nhận khi đọc cùng một đáp án 3 lần liên tiếp
+function seen(id,a){
+  if(!ids.has(id))return;
+  const b=buf.get(id);
+  if(b&&b.a===a)b.n++;else buf.set(id,{a,n:1});
+  if(buf.get(id).n>=3&&sent.get(id)!==a)pend.set(id,a);
+}
+async function flush(){
+  if(!pend.size||Number(state.mo)!==1)return;
+  const batch=[...pend],c=cau;
+  try{
+    await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},
+      body:JSON.stringify({action:'submit',cau:c,answers:batch.map(([id,ans])=>({id,ans}))})});
+    if(c===cau)batch.forEach(([id,a])=>{sent.set(id,a);if(pend.get(id)===a)pend.delete(id)});
+    head();
+  }catch(e){say('Gửi chưa được, sẽ thử lại…')}
 }
 
 async function start(){
+  if(!API){say('Chưa có link kết nối. Trên tivi bấm “Sao chép link điện thoại”, gửi sang điện thoại rồi mở link đó.');return}
   if(typeof AR==='undefined'){say('Không tải được thư viện quét (cần có mạng).');return}
-  if(!window.isSecureContext){say('Camera chỉ chạy trên trang https. Hãy mở bằng địa chỉ GitHub Pages.');return}
+  if(!window.isSecureContext){say('Camera chỉ chạy trên trang https.');return}
   try{
     det=new AR.Detector({dictionaryName:'ARUCO'});
     const s=await navigator.mediaDevices.getUserMedia({
       video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
-    vid.srcObject=s; await vid.play();
-    const w=Math.min(vid.videoWidth,1280), h=Math.round(w*vid.videoHeight/vid.videoWidth);
-    work.width=cv.width=w; work.height=cv.height=h;
-    $('go').style.display='none';
-    $('info').textContent='Độ phân giải camera: '+vid.videoWidth+'×'+vid.videoHeight;
-    say('Đang quét…');
+    vid.srcObject=s;await vid.play();
+    try{await navigator.wakeLock.request('screen')}catch(e){}
+    const w=Math.min(vid.videoWidth,1280),h=Math.round(w*vid.videoHeight/vid.videoWidth);
+    work.width=cv.width=w;work.height=cv.height=h;
+    $('go').style.display='none';say('Đang quét. Giơ thẻ lên, đáp án là cạnh hướng lên trên.');
     requestAnimationFrame(loop);
   }catch(e){say('Không mở được camera: '+(e.message||e))}
 }
-
-function loop(t){
-  if(t-last>90){last=t; scan(t)}
-  requestAnimationFrame(loop);
-}
-
-function scan(t){
+function loop(t){if(t-last>90){last=t;scan()}requestAnimationFrame(loop)}
+function scan(){
+  if(!F)return;
   wctx.drawImage(vid,0,0,work.width,work.height);
   const ms=det.detect(wctx.getImageData(0,0,work.width,work.height));
   ctx.clearRect(0,0,cv.width,cv.height);
-  const seen=new Map();
   for(const m of ms){
-    const r=answerOf(m.corners), L=LET[r.i];
-    seen.set(m.id,{L,ang:r.ang});
-    ctx.lineWidth=5; ctx.strokeStyle='#3ddc97'; ctx.beginPath();
-    m.corners.forEach((p,k)=>k?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
-    ctx.closePath(); ctx.stroke();
-    const cx=m.corners.reduce((s,p)=>s+p.x,0)/4, cy=m.corners.reduce((s,p)=>s+p.y,0)/4;
-    ctx.font='bold 64px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.lineWidth=8; ctx.strokeStyle='#000'; ctx.strokeText(L,cx,cy);
-    ctx.fillStyle='#fff'; ctx.fillText(L,cx,cy);
+    const a=answerOf(m.corners);seen(m.id,a);
+    const good=sent.get(m.id)===a,col=!ids.has(m.id)?'#ef6a6a':good?'#3ddc97':'#f5b042';
+    ctx.lineWidth=5;ctx.strokeStyle=col;ctx.beginPath();
+    m.corners.forEach((p,k)=>k?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.stroke();
+    const cx=m.corners.reduce((s,p)=>s+p.x,0)/4,cy=m.corners.reduce((s,p)=>s+p.y,0)/4;
+    ctx.font='bold 56px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.lineWidth=8;ctx.strokeStyle='#000';ctx.strokeText(a,cx,cy);ctx.fillStyle='#fff';ctx.fillText(a,cx,cy);
   }
-  const tot={A:0,B:0,C:0,D:0};
-  const ids=[...seen.keys()].sort((a,b)=>a-b);
-  $('list').innerHTML=ids.map(id=>{const s=seen.get(id);tot[s.L]++;return `Thẻ <span>${id}→<b>${s.L}</b> (${s.ang}°)</span>`}).join(' · ')||'';
-  for(const k in tot)$('t'+k).textContent=tot[k];
-  fpsN++; if(t-fpsT>1000){say('Đang quét… '+fpsN+' lần/giây · thấy '+ids.length+' thẻ'); fpsN=0; fpsT=t}
 }
 $('go').onclick=start;
+if(API){poll();setInterval(poll,1500);setInterval(flush,1200)}
+else say('Chưa có link kết nối. Trên tivi bấm “Sao chép link điện thoại”, gửi sang điện thoại rồi mở link đó.');
 </script>
 </body>
 </html>

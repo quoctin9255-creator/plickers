@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>In thẻ trả lời</title>
+<style>
+  @page{size:A4;margin:8mm}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.4 system-ui,"Segoe UI",sans-serif;color:#111;background:#fff}
+  .bar{padding:14px;background:#eef2f4;border-bottom:1px solid #cfd6da}
+  .bar label{display:block;margin:6px 0 2px;font-weight:600}
+  .bar textarea{width:100%;max-width:520px;height:130px;font:inherit}
+  .bar input{font:inherit;width:90px}
+  .bar button{font:inherit;font-weight:600;padding:10px 18px;margin-top:10px;margin-right:8px}
+  #sheet{--s:8cm;display:flex;flex-wrap:wrap;gap:4mm;justify-content:center;padding:6mm}
+  .card{width:var(--s);break-inside:avoid;text-align:center}
+  .sq{position:relative;width:var(--s);height:var(--s);border:.4mm solid #000;background:#fff}
+  .mk{position:absolute;inset:14%;background:#fff}
+  .mk svg{width:100%;height:100%;display:block}
+  .l{position:absolute;font:700 calc(var(--s)*.085)/1 system-ui,sans-serif}
+  .a{top:2.2%;left:50%;transform:translateX(-50%)}
+  .b{right:3.2%;top:50%;transform:translateY(-50%) rotate(90deg)}
+  .c{bottom:2.2%;left:50%;transform:translateX(-50%) rotate(180deg)}
+  .d{left:3.2%;top:50%;transform:translateY(-50%) rotate(-90deg)}
+  .cap{font-size:12px;margin-top:1mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  @media print{.bar{display:none}#sheet{padding:0}}
+</style>
+</head>
+<body>
+<div class="bar">
+  <label for="names">Danh sách học sinh (mỗi dòng một em, em ở dòng 1 nhận thẻ số 1, dòng 2 nhận thẻ số 2…)</label>
+  <textarea id="names" placeholder="Nguyễn Văn A&#10;Trần Thị B"></textarea>
+  <label for="n">Hoặc chỉ cần số thẻ (nếu không nhập tên)</label>
+  <input id="n" type="number" min="1" max="1000" value="6">
+  <label for="size">Cỡ thẻ (cm). 8 cm = 6 thẻ/trang A4, 9 cm = 4 thẻ/trang</label>
+  <input id="size" type="number" min="5" max="12" step="0.5" value="8">
+  <br><button id="make">Tạo thẻ</button><button onclick="window.print()">In</button>
+</div>
+<div id="sheet"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/cv.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/aruco.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function make(){
+  if(typeof AR==='undefined'){alert('Không tải được thư viện (cần có mạng).');return}
+  const names=$('names').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const n=names.length||Math.min(+$('n').value||1,1000);
+  const dic=new AR.Dictionary('ARUCO');
+  $('sheet').style.setProperty('--s',($('size').value||8)+'cm');
+  let h='';
+  for(let i=0;i<n;i++){
+    const id=i+1;
+    h+=`<div class="card"><div class="sq"><div class="mk">${dic.generateSVG(id)}</div>`+
+       `<span class="l a">A</span><span class="l b">B</span><span class="l c">C</span><span class="l d">D</span></div>`+
+       `<div class="cap">${id}. ${esc(names[i]||'')}</div></div>`;
+  }
+  $('sheet').innerHTML=h;
+}
+$('make').onclick=make;
+make();
+</script>
+</body>
+</html>

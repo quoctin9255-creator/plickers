@@ -78,7 +78,13 @@ function toggleLive(){showLive=!showLive;localStorage.setItem('pl_live',showLive
 applyZ();
 
 const get=async a=>(await fetch(API+'?action='+a,{cache:'no-store'})).json();
-const post=o=>fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(o)});
+async function post(o){
+  for(let i=0;i<4;i++){
+    try{const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(o)});
+        const j=await r.json();if(j.ok)return j}catch(e){}
+    await new Promise(r=>setTimeout(r,800));
+  }
+}
 
 async function loadFull(){
   F=await get('full');
@@ -97,9 +103,10 @@ async function poll(){
   }catch(e){$('#st').textContent='Mất kết nối, đang thử lại…'}
 }
 async function setv(v,reload){
-  hold=Date.now()+2500;
+  hold=Date.now()+30000;
   Object.assign(L.state,v);if(!reload)draw();
   await post({action:'set',values:v});
+  hold=Date.now()+1500;
   if(reload){hold=0;await loadFull()}
 }
 
@@ -154,6 +161,7 @@ $('#lnk').onclick=async()=>{
   const u=new URL('scan.html',location.href).href+'#api='+encodeURIComponent(API);
   try{await navigator.clipboard.writeText(u);alert('Đã sao chép. Gửi link này sang điện thoại (Zalo) rồi mở bằng Chrome/Safari.')}catch(e){prompt('Sao chép link này:',u)}
 };
+document.addEventListener('click',e=>{if(e.target.tagName==='BUTTON')e.target.blur()});
 addEventListener('keydown',e=>{
   if(!F||e.target.tagName==='SELECT')return;
   const k=e.key;

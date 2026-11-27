@@ -83,15 +83,20 @@ function seen(id,a){
   if(b&&b.a===a)b.n++;else buf.set(id,{a,n:1});
   if(buf.get(id).n>=3&&sent.get(id)!==a)pend.set(id,a);
 }
+let busy=false;
 async function flush(){
-  if(!pend.size||Number(state.mo)!==1)return;
+  if(busy||!pend.size||Number(state.mo)!==1)return;
+  busy=true;
   const batch=[...pend],c=cau;
   try{
-    await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},
+    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},
       body:JSON.stringify({action:'submit',cau:c,answers:batch.map(([id,ans])=>({id,ans}))})});
+    const j=await r.json();
+    if(!j.ok)throw new Error('busy');
     if(c===cau)batch.forEach(([id,a])=>{sent.set(id,a);if(pend.get(id)===a)pend.delete(id)});
-    head();
+    say('Đã ghi nhận '+sent.size+' thẻ.');head();
   }catch(e){say('Gửi chưa được, sẽ thử lại…')}
+  busy=false;
 }
 
 async function start(){

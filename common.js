@@ -76,7 +76,7 @@ async function send(values,timer){
 function go(d){
   const st=PL.L.state,n=Math.min(PL.F.questions.length,Math.max(1,Number(st.cau)+d));
   if(n===Number(st.cau))return;
-  PL.L.answers=[];send({cau:n,mo:1,rev:0},{mode:'restart',sec:secOf(n)});
+  PL.L.answers=[];send({cau:n,mo:1,rev:0,sum:0},{mode:'restart',sec:secOf(n)});
 }
 function reveal(){
   const r=Number(PL.L.state.rev)===1?0:1;
@@ -92,7 +92,8 @@ function remainMs(){
   if(st.tst==='pause')return Number(st.tleft)||0;
   return secOf(Number(st.cau))*1000;
 }
-function newSession(){return send({phien:'P'+Date.now(),cau:1,mo:1,rev:0},{mode:'reset',sec:secOf(1)})}
+function newSession(){return send({phien:'P'+Date.now(),cau:1,mo:1,rev:0,sum:0},{mode:'reset',sec:secOf(1)})}
+const summaryTotal=()=>new Set(PL.F.results.map(r=>r.cau)).size;   // số câu đã có người trả lời
 function summaryRows(){
   const key=new Map(PL.F.questions.map((q,i)=>[i+1,q.ok]));
   const sc=new Map(PL.F.students.map(s=>[s.id,{n:s.name,ok:0,done:0}]));

@@ -18,14 +18,15 @@
   .panel{max-width:900px;margin:0 auto;padding:8px 14px}
   button{font:inherit;font-weight:600;padding:12px 14px;border:0;border-radius:10px;background:var(--ok);color:#06210f}
   button.alt{background:#2a3138;color:var(--ink)}
-  #ctl{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0}
-  #ctl button{padding:12px 6px;font-size:15px}
+  #ctl{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0}
+  #ctl button.on{outline:2px solid var(--ok)}
+  #ctl button{padding:12px 2px;font-size:13.5px}
   #cRev.arm{background:var(--bad);color:#fff}
   #zwrap{display:flex;align-items:center;gap:10px;margin:8px 0;color:var(--mut)} #zwrap input{flex:1}
   .tot{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:8px 0}
   .tot div{border:1px solid var(--line);border-radius:10px;padding:4px;text-align:center}
   .tot b{display:block;font-size:24px}
-  #msg,#miss,#fps{color:var(--mut);font-size:14px;margin:6px 0}
+  #msg,#miss,#fps,#cinfo{color:var(--mut);font-size:14px;margin:6px 0}
 </style>
 </head>
 <body>
@@ -33,17 +34,19 @@
 <div class="cam"><video id="v" playsinline muted></video><canvas id="c"></canvas></div>
 <div class="panel">
   <div id="ctl">
-    <button id="cPrev" class="alt">◀ Câu trước</button>
-    <button id="cNext">Câu sau ▶</button>
+    <button id="cPrev" class="alt">◀ Trước</button>
+    <button id="cNext">Sau ▶</button>
     <button id="cLock" class="alt"></button>
     <button id="cTm" class="alt"></button>
     <button id="cAdd" class="alt">+30 giây</button>
     <button id="cRev" class="alt"></button>
+    <button id="cLive" class="alt">Thống kê</button>
+    <button id="cSum" class="alt">Tổng kết</button>
   </div>
-  <button id="go">Mở camera</button><button id="mode" class="alt" hidden></button>
+  <button id="go">Mở camera</button><button id="mode" class="alt" hidden></button><button id="cam" class="alt" hidden></button>
   <label id="zwrap" hidden>Zoom <input id="zoom" type="range"></label>
   <div class="tot"><div>A<b id="tA">0</b></div><div>B<b id="tB">0</b></div><div>C<b id="tC">0</b></div><div>D<b id="tD">0</b></div></div>
-  <div id="msg"></div><div id="fps"></div><div id="miss"></div>
+  <div id="msg"></div><div id="fps"></div><div id="cinfo"></div><div id="miss"></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/cv.js"></script>
@@ -75,9 +78,11 @@ function head(){
   $('#miss').textContent=miss.length?'Chưa quét: '+miss.join(', '):'Đã quét đủ cả lớp.';
   const t={A:0,B:0,C:0,D:0};ok.forEach(a=>t[a]++);
   for(const k in t)$('#t'+k).textContent=t[k];
-  $('#cLock').textContent=open?'⏸ Khóa bài':'▶ Mở bài';
+  $('#cLock').textContent=open?'⏸ Khóa':'▶ Mở bài';
   $('#cTm').textContent=s.tst==='run'?'⏸ Dừng giờ':'⏱ Chạy giờ';
-  $('#cRev').textContent=Number(s.rev)===1?'Ẩn đáp án':'Giữ để hiện đáp án';
+  $('#cRev').textContent=Number(s.rev)===1?'Ẩn đáp án':'Giữ: đáp án';
+  $('#cLive').classList.toggle('on',Number(s.live)===1);
+  $('#cSum').classList.toggle('on',Number(s.sum)===1);
 }
 function clk(){
   if(!PL.L||!PL.F)return;
@@ -118,25 +123,45 @@ function setSize(){
   work.width=cv.width=w;work.height=cv.height=h;
   $('#mode').textContent=W<=960?'Chế độ: Quét nhanh':'Chế độ: Quét xa';
 }
+let stream=null,devs=[],di=0;
+async function openCam(id){
+  if(stream)stream.getTracks().forEach(t=>t.stop());
+  const v={width:{ideal:1920},height:{ideal:1080}};
+  if(id)v.deviceId={exact:id};else v.facingMode={ideal:'environment'};
+  stream=await navigator.mediaDevices.getUserMedia({video:v,audio:false});
+  vid.srcObject=stream;await vid.play();setSize();
+  const tr=stream.getVideoTracks()[0],cap=tr.getCapabilities?tr.getCapabilities():{},set=tr.getSettings?tr.getSettings():{};
+  $('#cinfo').textContent='Camera: '+(tr.label||'?')+' · '+vid.videoWidth+'×'+vid.videoHeight+(cap.zoom?' · zoom '+cap.zoom.min+'–'+cap.zoom.max:'');
+  const zw=$('#zwrap');zw.hidden=true;
+  if(cap.zoom){   // zoom (có trên nhiều máy Android)
+    const z=$('#zoom');z.min=cap.zoom.min;z.max=cap.zoom.max;z.step=cap.zoom.step||0.1;z.value=set.zoom||cap.zoom.min;
+    z.oninput=()=>tr.applyConstraints({advanced:[{zoom:+z.value}]});zw.hidden=false;
+  }
+  return set.deviceId;
+}
+const camLabel=()=>{$('#cam').textContent='Đổi camera ('+(di+1)+'/'+devs.length+')'};
 async function start(){
   if(typeof AR==='undefined'){say('Không tải được thư viện quét (cần có mạng).');return}
   if(!window.isSecureContext){say('Camera chỉ chạy trên trang https.');return}
   try{
     det=new AR.Detector({dictionaryName:'ARUCO'});
-    const s=await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
-    vid.srcObject=s;await vid.play();
+    const saved=localStorage.getItem('pl_cam');let cur;
+    try{cur=await openCam(saved||undefined)}catch(e){cur=await openCam()}
     try{await navigator.wakeLock.request('screen')}catch(e){}
-    setSize();$('#go').hidden=true;$('#mode').hidden=false;
-    try{  // zoom (có trên nhiều máy Android) để quét hàng cuối lớp
-      const tr=s.getVideoTracks()[0],cap=tr.getCapabilities?tr.getCapabilities():{};
-      if(cap.zoom){const z=$('#zoom');z.min=cap.zoom.min;z.max=cap.zoom.max;z.step=cap.zoom.step||0.1;z.value=cap.zoom.min;
-        z.oninput=()=>tr.applyConstraints({advanced:[{zoom:+z.value}]});$('#zwrap').hidden=false}
-    }catch(e){}
+    const all=await navigator.mediaDevices.enumerateDevices();
+    devs=all.filter(d=>d.kind==='videoinput'&&!/front|user|trước/i.test(d.label));
+    di=Math.max(0,devs.findIndex(d=>d.deviceId===cur));
+    $('#go').hidden=true;$('#mode').hidden=false;
+    if(devs.length>1){$('#cam').hidden=false;camLabel()}
     say('Đang quét. Giơ thẻ lên, đáp án là cạnh hướng lên trên. Khung xanh là đã ghi nhận.');
     requestAnimationFrame(loop);
   }catch(e){say('Không mở được camera: '+(e.message||e))}
 }
+$('#cam').onclick=async()=>{
+  di=(di+1)%devs.length;
+  try{await openCam(devs[di].deviceId);localStorage.setItem('pl_cam',devs[di].deviceId);camLabel()}
+  catch(e){say('Không mở được camera này: '+(e.message||e))}
+};
 function loop(){
   scan();
   fN++;const n=performance.now();
@@ -167,6 +192,8 @@ $('#cNext').onclick=()=>PL.F&&go(1);
 $('#cLock').onclick=()=>PL.F&&lock();
 $('#cTm').onclick=()=>PL.F&&tmr(PL.L.state.tst==='run'?'pause':'start');
 $('#cAdd').onclick=()=>PL.F&&tmr('add',30000);
+$('#cLive').onclick=()=>PL.F&&toggle('live');
+$('#cSum').onclick=()=>PL.F&&toggle('sum');
 let holdT=null;   // hiện đáp án phải giữ nút nửa giây để tránh chạm nhầm
 const rb=$('#cRev');
 rb.onpointerdown=()=>{

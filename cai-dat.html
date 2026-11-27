@@ -89,7 +89,7 @@ $('#lnk').onclick=async()=>{
 $('#sum').onclick=async()=>{
   await loadFull();
   $('#tbl').innerHTML='<table><tr><th>#</th><th>Học sinh</th><th>Đúng</th><th>Đã trả lời</th></tr>'+
-    summaryRows().map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r.n)}</td><td>${r.ok}/${PL.F.questions.length}</td><td>${r.done}</td></tr>`).join('')+'</table>';
+    summaryRows().map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r.n)}</td><td>${r.ok}/${summaryTotal()}</td><td>${r.done}</td></tr>`).join('')+'</table>';
 };
 PL.onchange=draw;
 PL.onerror=()=>{$('#msg').textContent='Không tải được dữ liệu. Kiểm tra URL Apps Script.'};

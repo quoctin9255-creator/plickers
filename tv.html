@@ -231,7 +231,7 @@ addEventListener('keydown',e=>{
   else if(k==='t'||k==='T')toggleTimer();
   else if(k==='h'||k==='H')document.body.classList.toggle('nonav');
 });
-if(API){loadFull().catch(()=>{$('#st').textContent='Không tải được dữ liệu. Kiểm tra URL.'});setInterval(poll,2000)}
+if(API){loadFull().catch(()=>{$('#st').textContent='Không tải được dữ liệu. Kiểm tra URL.'});setInterval(poll,1500)}
 </script>
 </body>
 </html>

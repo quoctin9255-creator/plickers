@@ -5,83 +5,96 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Quét thẻ</title>
 <style>
-  :root{--bg:#14181c;--ink:#f2f4f5;--mut:#9aa5ad;--ok:#3ddc97;--line:#2a3138}
+  :root{--bg:#14181c;--ink:#f2f4f5;--mut:#9aa5ad;--ok:#3ddc97;--bad:#ef6a6a;--line:#2a3138}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,"Segoe UI",sans-serif}
   [hidden]{display:none!important}
-  #top{display:flex;justify-content:space-between;gap:8px;padding:10px 14px;font-weight:700}
-  #st{font-weight:400;color:var(--mut);text-align:right}
+  #top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:8px 14px;font-weight:700}
+  #clk{font-variant-numeric:tabular-nums} #clk.hot{color:var(--bad)}
+  #st{font-weight:400;color:var(--mut);text-align:right;font-size:14px}
   .cam{position:relative;width:100%;max-width:900px;margin:0 auto;background:#000;min-height:160px}
   video,canvas{display:block;width:100%}
   canvas{position:absolute;inset:0;height:100%}
-  .panel{max-width:900px;margin:0 auto;padding:10px 14px}
-  button{font:inherit;font-weight:600;padding:12px 20px;border:0;border-radius:10px;background:var(--ok);color:#06210f}
-  button.alt{background:#2a3138;color:var(--ink);margin-left:6px;padding:12px 14px}
-  #zwrap{display:flex;align-items:center;gap:10px;margin:10px 0;color:var(--mut)} #zwrap input{flex:1}
+  .panel{max-width:900px;margin:0 auto;padding:8px 14px}
+  button{font:inherit;font-weight:600;padding:12px 14px;border:0;border-radius:10px;background:var(--ok);color:#06210f}
+  button.alt{background:#2a3138;color:var(--ink)}
+  #ctl{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0}
+  #ctl button{padding:12px 6px;font-size:15px}
+  #cRev.arm{background:var(--bad);color:#fff}
+  #zwrap{display:flex;align-items:center;gap:10px;margin:8px 0;color:var(--mut)} #zwrap input{flex:1}
   .tot{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:8px 0}
-  .tot div{border:1px solid var(--line);border-radius:10px;padding:6px;text-align:center}
-  .tot b{display:block;font-size:26px}
+  .tot div{border:1px solid var(--line);border-radius:10px;padding:4px;text-align:center}
+  .tot b{display:block;font-size:24px}
   #msg,#miss,#fps{color:var(--mut);font-size:14px;margin:6px 0}
 </style>
 </head>
 <body>
-<div id="top"><span id="num">Câu –</span><span id="st">Chưa kết nối</span></div>
+<div id="top"><span id="num">Câu –</span><span id="clk"></span><span id="st">Chưa kết nối</span></div>
 <div class="cam"><video id="v" playsinline muted></video><canvas id="c"></canvas></div>
 <div class="panel">
+  <div id="ctl">
+    <button id="cPrev" class="alt">◀ Câu trước</button>
+    <button id="cNext">Câu sau ▶</button>
+    <button id="cLock" class="alt"></button>
+    <button id="cTm" class="alt"></button>
+    <button id="cAdd" class="alt">+30 giây</button>
+    <button id="cRev" class="alt"></button>
+  </div>
   <button id="go">Mở camera</button><button id="mode" class="alt" hidden></button>
   <label id="zwrap" hidden>Zoom <input id="zoom" type="range"></label>
   <div class="tot"><div>A<b id="tA">0</b></div><div>B<b id="tB">0</b></div><div>C<b id="tC">0</b></div><div>D<b id="tD">0</b></div></div>
-  <div id="msg"></div><div id="fps"></div>
-  <div id="miss"></div>
+  <div id="msg"></div><div id="fps"></div><div id="miss"></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/cv.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/aruco.js"></script>
+<script src="common.js"></script>
 <script>
-const $=id=>document.getElementById(id), LET=['A','B','C','D'];
 const hp=new URLSearchParams(location.hash.slice(1));
-if(hp.get('api')){localStorage.setItem('pl_api',hp.get('api'));history.replaceState(null,'',location.pathname)}
-const API=localStorage.getItem('pl_api')||'';
-const say=t=>$('msg').textContent=t;
-const vid=$('v'),cv=$('c'),ctx=cv.getContext('2d');
+if(hp.get('api')){localStorage.setItem('pl_api',hp.get('api'));PL.api=hp.get('api');history.replaceState(null,'',location.pathname)}
+const say=t=>$('#msg').textContent=t;
+const vid=$('#v'),cv=$('#c'),ctx=cv.getContext('2d');
 const work=document.createElement('canvas'),wctx=work.getContext('2d',{willReadFrequently:true});
 
-let F=null,state={cau:0,mo:1},ids=new Set(),det,cau=0,busy=false;
+let det,ids=new Set(),key='',busy=false;
 let buf=new Map(),ok=new Map(),pend=new Map();   // buf: đang đọc · ok: đã xác nhận trên máy · pend: chờ gửi
-let W=Number(localStorage.getItem('pl_w'))||1280, fN=0, fT=performance.now();
+let W=Number(localStorage.getItem('pl_w'))||960, fN=0, fT=performance.now();
 
-const get=async a=>(await fetch(API+'?action='+a,{cache:'no-store'})).json();
-
-async function loadFull(){F=await get('full');state=F.state;ids=new Set(F.students.map(s=>s.id))}
-async function poll(){
-  try{
-    const n=await get('live'),s=n.state;
-    if(!F||s.lop!==state.lop||String(s.phien)!==String(state.phien))await loadFull();
-    state=s;
-    if(Number(s.cau)!==cau){cau=Number(s.cau);buf.clear();ok.clear();pend.clear()}
-    head();
-  }catch(e){$('st').textContent='Mất kết nối…'}
+function sync(){
+  const F=PL.F,s=PL.L&&PL.L.state;if(!F||!s)return;
+  ids=new Set(F.students.map(x=>x.id));
+  const k=s.phien+'|'+s.cau;
+  if(k!==key){key=k;buf.clear();ok.clear();pend.clear()}
+  head();
 }
 function head(){
-  const open=Number(state.mo)===1;
-  $('num').textContent='Câu '+state.cau+(F?'/'+F.questions.length:'');
-  $('st').textContent=(open?'● Đang nhận bài':'■ Đã khóa, không ghi nhận')+' · đã quét '+ok.size+(F?'/'+F.students.length:'')+(pend.size?' · đang gửi '+pend.size:'');
-  if(F){
-    const miss=F.students.filter(s=>!ok.has(s.id)).map(s=>s.name);
-    $('miss').textContent=miss.length?'Chưa quét: '+miss.join(', '):'Đã quét đủ cả lớp.';
-  }
+  const F=PL.F,s=PL.L.state,open=Number(s.mo)===1;
+  $('#num').textContent='Câu '+s.cau+'/'+F.questions.length;
+  $('#st').textContent=(open?'● Đang nhận bài':'■ Đã khóa')+' · đã quét '+ok.size+'/'+F.students.length+(pend.size?' · đang gửi '+pend.size:'');
+  const miss=F.students.filter(x=>!ok.has(x.id)).map(x=>x.name);
+  $('#miss').textContent=miss.length?'Chưa quét: '+miss.join(', '):'Đã quét đủ cả lớp.';
   const t={A:0,B:0,C:0,D:0};ok.forEach(a=>t[a]++);
-  for(const k in t)$('t'+k).textContent=t[k];
+  for(const k in t)$('#t'+k).textContent=t[k];
+  $('#cLock').textContent=open?'⏸ Khóa bài':'▶ Mở bài';
+  $('#cTm').textContent=s.tst==='run'?'⏸ Dừng giờ':'⏱ Chạy giờ';
+  $('#cRev').textContent=Number(s.rev)===1?'Ẩn đáp án':'Giữ để hiện đáp án';
 }
+function clk(){
+  if(!PL.L||!PL.F)return;
+  const s=PL.L.state,ms=remainMs(),n=Math.ceil(Math.max(0,ms)/1000),run=s.tst==='run';
+  $('#clk').textContent='⏱ '+Math.floor(n/60)+':'+String(n%60).padStart(2,'0');
+  $('#clk').className=(run&&n<=10)?'hot':'';
+}
+setInterval(clk,500);
 
 // Đáp án = cạnh của thẻ đang hướng lên trên (A trên, B phải, C dưới, D trái khi thẻ đặt thẳng)
 function answerOf(c){
   const a=(Math.atan2(c[1].y-c[0].y,c[1].x-c[0].x)*180/Math.PI+360)%360;
   return LET[Math.round(((360-a)%360)/90)%4];
 }
-// Đọc cùng một đáp án 2 lần liên tiếp là xác nhận ngay trên máy (hiện xanh tức thì), việc gửi lên Sheet chạy nền
+// Đọc cùng một đáp án 2 lần liên tiếp là xác nhận ngay trên máy (hiện xanh tức thì); gửi lên Sheet chạy nền
 function seen(id,a){
-  if(!ids.has(id)||Number(state.mo)!==1)return;
+  if(!ids.has(id)||Number(PL.L.state.mo)!==1)return;
   const b=buf.get(id);
   if(b&&b.a===a)b.n++;else buf.set(id,{a,n:1});
   if(buf.get(id).n>=2&&ok.get(id)!==a){
@@ -91,27 +104,21 @@ function seen(id,a){
   }
 }
 async function flush(){
-  if(busy||!pend.size||Number(state.mo)!==1)return;
+  if(busy||!pend.size||!PL.L||Number(PL.L.state.mo)!==1)return;
   busy=true;
-  const batch=[...pend],c=cau;
-  try{
-    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},
-      body:JSON.stringify({action:'submit',cau:c,answers:batch.map(([id,ans])=>({id,ans}))})});
-    const j=await r.json();
-    if(!j.ok)throw new Error('busy');
-    if(c===cau)batch.forEach(([id,a])=>{if(pend.get(id)===a)pend.delete(id)});
-    say('');
-  }catch(e){say('Gửi chưa được, sẽ thử lại…')}
+  const batch=[...pend],k=key,s=PL.L.state;
+  const j=await post({action:'submit',cau:Number(s.cau),answers:batch.map(([id,ans])=>({id,ans}))});
+  if(j){if(k===key)batch.forEach(([id,a])=>{if(pend.get(id)===a)pend.delete(id)});say('')}
+  else say('Gửi chưa được, sẽ thử lại…');
   busy=false;head();
 }
 
 function setSize(){
   const w=Math.min(vid.videoWidth,W),h=Math.round(w*vid.videoHeight/vid.videoWidth);
   work.width=cv.width=w;work.height=cv.height=h;
-  $('mode').textContent=W<=960?'Chế độ: Quét nhanh':'Chế độ: Quét xa';
+  $('#mode').textContent=W<=960?'Chế độ: Quét nhanh':'Chế độ: Quét xa';
 }
 async function start(){
-  if(!API){say('Chưa có link kết nối. Trên tivi bấm “Link điện thoại”, gửi sang điện thoại rồi mở link đó.');return}
   if(typeof AR==='undefined'){say('Không tải được thư viện quét (cần có mạng).');return}
   if(!window.isSecureContext){say('Camera chỉ chạy trên trang https.');return}
   try{
@@ -120,12 +127,11 @@ async function start(){
       video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
     vid.srcObject=s;await vid.play();
     try{await navigator.wakeLock.request('screen')}catch(e){}
-    setSize();
-    $('go').hidden=true;$('mode').hidden=false;
+    setSize();$('#go').hidden=true;$('#mode').hidden=false;
     try{  // zoom (có trên nhiều máy Android) để quét hàng cuối lớp
       const tr=s.getVideoTracks()[0],cap=tr.getCapabilities?tr.getCapabilities():{};
-      if(cap.zoom){const z=$('zoom');z.min=cap.zoom.min;z.max=cap.zoom.max;z.step=cap.zoom.step||0.1;z.value=cap.zoom.min;
-        z.oninput=()=>tr.applyConstraints({advanced:[{zoom:+z.value}]});$('zwrap').hidden=false}
+      if(cap.zoom){const z=$('#zoom');z.min=cap.zoom.min;z.max=cap.zoom.max;z.step=cap.zoom.step||0.1;z.value=cap.zoom.min;
+        z.oninput=()=>tr.applyConstraints({advanced:[{zoom:+z.value}]});$('#zwrap').hidden=false}
     }catch(e){}
     say('Đang quét. Giơ thẻ lên, đáp án là cạnh hướng lên trên. Khung xanh là đã ghi nhận.');
     requestAnimationFrame(loop);
@@ -134,11 +140,11 @@ async function start(){
 function loop(){
   scan();
   fN++;const n=performance.now();
-  if(n-fT>1000){$('fps').textContent='Tốc độ quét: '+fN+' khung/giây';fN=0;fT=n}
+  if(n-fT>1000){$('#fps').textContent='Tốc độ quét: '+fN+' khung/giây';fN=0;fT=n}
   requestAnimationFrame(loop);
 }
 function scan(){
-  if(!F)return;
+  if(!PL.F)return;
   wctx.drawImage(vid,0,0,work.width,work.height);
   const ms=det.detect(wctx.getImageData(0,0,work.width,work.height));
   ctx.clearRect(0,0,cv.width,cv.height);
@@ -152,10 +158,29 @@ function scan(){
     ctx.lineWidth=8;ctx.strokeStyle='#000';ctx.strokeText(a,cx,cy);ctx.fillStyle='#fff';ctx.fillText(a,cx,cy);
   }
 }
-$('go').onclick=start;
-$('mode').onclick=()=>{W=W<=960?1280:960;localStorage.setItem('pl_w',W);setSize()};
-if(API){poll();setInterval(poll,1500);setInterval(flush,800)}
-else say('Chưa có link kết nối. Trên tivi bấm “Link điện thoại”, gửi sang điện thoại rồi mở link đó.');
+
+// Nút điều khiển
+$('#go').onclick=start;
+$('#mode').onclick=()=>{W=W<=960?1280:960;localStorage.setItem('pl_w',W);setSize()};
+$('#cPrev').onclick=()=>PL.F&&go(-1);
+$('#cNext').onclick=()=>PL.F&&go(1);
+$('#cLock').onclick=()=>PL.F&&lock();
+$('#cTm').onclick=()=>PL.F&&tmr(PL.L.state.tst==='run'?'pause':'start');
+$('#cAdd').onclick=()=>PL.F&&tmr('add',30000);
+let holdT=null;   // hiện đáp án phải giữ nút nửa giây để tránh chạm nhầm
+const rb=$('#cRev');
+rb.onpointerdown=()=>{
+  if(!PL.F)return;
+  if(Number(PL.L.state.rev)===1){reveal();return}
+  rb.classList.add('arm');
+  holdT=setTimeout(()=>{holdT=null;rb.classList.remove('arm');reveal();try{navigator.vibrate&&navigator.vibrate(60)}catch(e){}},600);
+};
+['pointerup','pointerleave','pointercancel'].forEach(e=>rb.addEventListener(e,()=>{clearTimeout(holdT);rb.classList.remove('arm')}));
+
+PL.onchange=sync;
+PL.onerror=()=>{$('#st').textContent='Mất kết nối…'};
+if(!PL.api)say('Chưa có link kết nối. Mở trang cài đặt trên máy tính, bấm “Link điện thoại”, gửi sang điện thoại rồi mở link đó.');
+else{boot();setInterval(flush,800)}
 </script>
 </body>
 </html>

@@ -6,8 +6,8 @@
 <title>Trả lời bằng thẻ – màn hình tivi</title>
 <style>
   :root{--bg:#10151a;--card:#1b232b;--ink:#f4f6f7;--mut:#93a0aa;--ok:#3ddc97;--bad:#ef6a6a;
-        --c0:#ef6a6a;--c1:#5b9cf5;--c2:#f5b042;--c3:#3ddc97;--z:1}
-  html{font-size:calc(clamp(15px,1.45vw,34px)*var(--z))}
+        --c0:#ef6a6a;--c1:#5b9cf5;--c2:#f5b042;--c3:#3ddc97;--z:1;--fit:1}
+  html{font-size:calc(clamp(15px,1.45vw,34px)*var(--z)*var(--fit))}
   *{box-sizing:border-box}
   [hidden]{display:none!important}
   body{margin:0;height:100vh;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);color:var(--ink);
@@ -79,8 +79,17 @@ function draw(){
   if(rev&&Q&&okI>=0&&mine.length)t+=' · Đúng '+cnt[okI]+' ('+Math.round(cnt[okI]/mine.length*100)+'%)';
   $('#cnt').textContent=t;
   const d=$('#dot');d.textContent=open?'● Nhận bài':'■ Đã khóa';d.className=open?'on':'off';
-  tick();
+  fit();tick();
 }
+// Tự thu nhỏ chữ cho vừa màn hình: câu hỏi, đủ 4 đáp án và danh sách học sinh luôn hiện đủ, không phải cuộn
+function fit(){
+  const r=document.documentElement,qa=$('#qa'),st=$('#stu');
+  let f=1;r.style.setProperty('--fit',f);
+  while(f>.35&&(qa.scrollHeight>qa.clientHeight+1||st.scrollHeight>st.clientHeight+1)){
+    f=+(f-.04).toFixed(2);r.style.setProperty('--fit',f);
+  }
+}
+addEventListener('resize',()=>{if(PL.F)fit()});
 function tick(){
   if(!PL.L||!PL.F)return;
   const st=PL.L.state,run=st.tst==='run';
